@@ -1,0 +1,162 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+    --foreground-rgb: 0, 0, 0;
+    --background-start-rgb: 214, 219, 220;
+    --background-end-rgb: 255, 255, 255;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --foreground-rgb: 255, 255, 255;
+        --background-start-rgb: 0, 0, 0;
+        --background-end-rgb: 0, 0, 0;
+    }
+}
+
+@layer utilities {
+    .text-balance {
+        text-wrap: balance;
+    }
+}
+
+@layer base {
+    :root {
+        --background: 0 0% 100%;
+        --foreground: 0 0% 0%;
+        --card: 0 0% 100%;
+        --card-foreground: 0 0% 0%;
+        --popover: 0 0% 100%;
+        --popover-foreground: 0 0% 0%;
+        --primary: 0 0% 0%;
+        --primary-foreground: 0 0% 100%;
+        --secondary: 0 0% 95%;
+        --secondary-foreground: 0 0% 0%;
+        --muted: 0 0% 95%;
+        --muted-foreground: 0 0% 45%;
+        --accent: 0 0% 95%;
+        --accent-foreground: 0 0% 0%;
+        --destructive: 0 84.2% 60.2%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 0 0% 85%;
+        --input: 0 0% 90%;
+        --ring: 0 0% 0%;
+        --chart-1: 0 0% 0%;
+        --chart-2: 0 0% 20%;
+        --chart-3: 0 0% 40%;
+        --chart-4: 0 0% 60%;
+        --chart-5: 0 0% 80%;
+        --radius: 0rem;
+    }
+    .dark {
+        --background: 0 0% 0%;
+        --foreground: 0 0% 100%;
+        --card: 0 0% 0%;
+        --card-foreground: 0 0% 100%;
+        --popover: 0 0% 0%;
+        --popover-foreground: 0 0% 100%;
+        --primary: 0 0% 100%;
+        --primary-foreground: 0 0% 0%;
+        --secondary: 0 0% 10%;
+        --secondary-foreground: 0 0% 100%;
+        --muted: 0 0% 10%;
+        --muted-foreground: 0 0% 65%;
+        --accent: 0 0% 10%;
+        --accent-foreground: 0 0% 100%;
+        --destructive: 0 62.8% 30.6%;
+        --destructive-foreground: 0 0% 98%;
+        --border: 0 0% 20%;
+        --input: 0 0% 15%;
+        --ring: 0 0% 100%;
+        --chart-1: 0 0% 100%;
+        --chart-2: 0 0% 80%;
+        --chart-3: 0 0% 60%;
+        --chart-4: 0 0% 40%;
+        --chart-5: 0 0% 20%;
+    }
+}
+
+@layer base {
+    * {
+        @apply border-border;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+    }
+
+    @font-face {
+        font-family: "geist";
+        font-style: normal;
+        font-weight: 100 900;
+        src: url(/fonts/geist.woff2) format("woff2");
+    }
+
+    @font-face {
+        font-family: "geist-mono";
+        font-style: normal;
+        font-weight: 100 900;
+        src: url(/fonts/geist-mono.woff2) format("woff2");
+    }
+}
+
+.skeleton {
+    * {
+        pointer-events: none !important;
+    }
+
+    *[class^="text"] {
+        color: transparent !important;
+        @apply rounded-sm bg-foreground/20 select-none animate-pulse;
+    }
+
+    *[class^="no-skeleton"] {
+        opacity: 0 !important;
+    }
+
+    input {
+        opacity: 0 !important;
+    }
+
+    .skeleton-bg {
+        @apply bg-foreground/10;
+    }
+
+    .skeleton-div {
+        @apply bg-foreground/20 animate-pulse;
+    }
+}
+
+/* Mono-specific styles for minimalist design */
+.mono-logo {
+    font-family: 'geist-mono', 'Courier New', monospace;
+}
+
+/* Custom focus styles for black and white theme */
+.mono-input:focus {
+    outline: none;
+    border-color: #000;
+    box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.1);
+}
+
+.dark .mono-input:focus {
+    border-color: #fff;
+    box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.1);
+}
+
+/* Smooth transitions for all interactive elements */
+.mono-transition {
+    transition: all 0.2s ease-in-out;
+}
+
+/* Custom button hover effects */
+.mono-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.dark .mono-button:hover {
+    box-shadow: 0 4px 8px rgba(255, 255, 255, 0.1);
+}
