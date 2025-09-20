@@ -4,49 +4,32 @@ import { useAuth0 } from '@auth0/auth0-react';
 
 // Custom hook that provides Auth0 utilities
 export function useMonoAuth() {
-  // TEMPORARILY MOCK AUTH STATE FOR DEVELOPMENT
-  // Remove this when Auth0 credentials are ready
-  const mockUser = {
-    sub: 'mock-user-123',
-    name: 'Test User',
-    email: 'test@example.com'
-  };
+  const {
+    user,
+    isAuthenticated,
+    isLoading,
+    loginWithRedirect,
+    logout,
+    getAccessTokenSilently
+  } = useAuth0();
 
-  // Mock authenticated state for development
-  const isAuthenticated = true;
-  const isLoading = false;
-  const user = mockUser;
-
-  // Comment out real Auth0 hooks for now
-  // const {
-  //   user,
-  //   isAuthenticated,
-  //   isLoading,
-  //   loginWithRedirect,
-  //   logout,
-  //   getAccessTokenSilently
-  // } = useAuth0();
-
-  // TEMPORARILY MOCK AUTH FUNCTIONS FOR DEVELOPMENT
-  // Sign in with Google specifically - mock for now
+  // Sign in with Google specifically
   const signInWithGoogle = () => {
-    console.log('Mock: Would redirect to Google sign-in');
-    // loginWithRedirect({
-    //   authorizationParams: {
-    //     connection: 'google-oauth2',
-    //     scope: 'openid profile email'
-    //   }
-    // });
+    loginWithRedirect({
+      authorizationParams: {
+        connection: 'google-oauth2',
+        scope: 'openid profile email'
+      }
+    });
   };
 
-  // Sign out and redirect to sign-in page - mock for now
+  // Sign out and redirect to sign-in page
   const signOut = () => {
-    console.log('Mock: Would sign out user');
-    // logout({
-    //   logoutParams: {
-    //     returnTo: window.location.origin + '/auth/signin'
-    //   }
-    // });
+    logout({
+      logoutParams: {
+        returnTo: window.location.origin + '/auth/signin'
+      }
+    });
   };
 
   // Get user information
@@ -54,17 +37,15 @@ export function useMonoAuth() {
     return user || null;
   };
 
-  // Get access token (JWT) - mock for now
+  // Get access token (JWT)
   const getAccessToken = async () => {
-    console.log('Mock: Returning fake access token');
-    return 'mock-jwt-token-123';
-    // try {
-    //   if (!isAuthenticated) return null;
-    //   return await getAccessTokenSilently();
-    // } catch (error) {
-    //   console.error('Error getting access token:', error);
-    //   return null;
-    // }
+    try {
+      if (!isAuthenticated) return null;
+      return await getAccessTokenSilently();
+    } catch (error) {
+      console.error('Error getting access token:', error);
+      return null;
+    }
   };
 
   return {
