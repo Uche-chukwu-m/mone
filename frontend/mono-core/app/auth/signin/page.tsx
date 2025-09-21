@@ -1,37 +1,21 @@
 'use client';
 
-import { useAuth0 } from '@auth0/auth0-react';
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
 
 export default function SignInPage() {
-  const { loginWithRedirect, isAuthenticated, isLoading } = useAuth0();
-
   useEffect(() => {
-    // If user is already authenticated, redirect to main app
-    if (isAuthenticated) {
-      window.location.href = '/';
+    // Check if user is already authenticated via localStorage
+    const token = localStorage.getItem('google_access_token');
+    if (token) {
+      window.location.href = '/welcome';
     }
-  }, [isAuthenticated]);
+  }, []);
 
   const handleGoogleSignIn = () => {
-    // Step 1: User clicks "Sign in with Google" button
-    // Step 2: Frontend asks Auth0 to handle it using Auth0 SDK
-    loginWithRedirect({
-      authorizationParams: {
-        connection: 'google-oauth2', // Specifically use Google connection
-        scope: 'openid profile email'
-      }
-    });
+    // Direct redirect to our backend Google OAuth endpoint
+    window.location.href = 'http://127.0.0.1:8000/auth/google/login';
   };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="animate-pulse text-white">Loading...</div>
-      </div>
-    );
-  }
 
   return (
     <motion.div

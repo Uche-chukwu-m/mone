@@ -6,16 +6,19 @@ import { motion } from 'framer-motion';
 import { MonoLogo } from "@/components/mono-logo";
 import { AnimatedVisual } from "@/components/animated-visual";
 import { collectUserOnboardingData, sendUserDataToBackend } from "@/lib/user-data";
-import { useMonoAuth } from "@/lib/auth0-utils";
 
 export default function LoadingPage() {
   const [loadingProgress, setLoadingProgress] = useState(0);
   const router = useRouter();
-  const { isAuthenticated, isLoading, getAccessToken, user } = useMonoAuth();
 
   useEffect(() => {
     const processOnboardingData = async () => {
-      if (!isAuthenticated || !user) {
+      // Check if user is authenticated via localStorage (replacing Auth0)
+      const token = localStorage.getItem('google_access_token');
+      const userName = localStorage.getItem('name');
+      const userEmail = localStorage.getItem('email');
+      
+      if (!token) {
         router.push('/auth/signin');
         return;
       }
@@ -23,23 +26,18 @@ export default function LoadingPage() {
       // Collect user data when loading starts
       const userData = collectUserOnboardingData();
       console.log('Collected User Data:', userData);
-      console.log('Auth0 User:', user);
+      console.log('Google OAuth User:', { name: userName, email: userEmail });
 
-      // Get access token for backend API calls
+      // Send to backend with Google OAuth token
       try {
-        const accessToken = await getAccessToken();
-        console.log('Access Token:', !!accessToken);
-        
-        // Send to backend with Auth0 token
-        await sendUserDataToBackend(userData, accessToken);
+        console.log('Google Access Token:', !!token);
+        await sendUserDataToBackend(userData, token);
       } catch (error) {
         console.error('Error processing onboarding:', error);
       }
     };
 
-    if (!isLoading) {
-      processOnboardingData();
-    }
+    processOnboardingData();
 
     // Simulate loading progress
     const timer = setInterval(() => {

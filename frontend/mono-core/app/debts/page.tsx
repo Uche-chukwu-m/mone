@@ -6,8 +6,6 @@ import { motion } from 'framer-motion';
 import { MonoLogo } from "@/components/mono-logo";
 import { ProgressBar } from "@/components/progress-bar";
 import { AnimatedVisual } from "@/components/animated-visual";
-import { useMonoAuth } from "@/lib/auth0-utils";
-
 const debtTypes = [
   { id: 'credit-card', label: 'Credit card' },
   { id: 'medical', label: 'Medical debt' },
@@ -28,29 +26,16 @@ export default function DebtsPage() {
   const [debts, setDebts] = useState<DebtSelection>({});
   const [hasNoDebt, setHasNoDebt] = useState(false);
   const router = useRouter();
-  const { isAuthenticated, isLoading } = useMonoAuth();
 
   useEffect(() => {
-    // Check if user is authenticated
-    if (!isLoading && !isAuthenticated) {
+    // Check if user is authenticated via localStorage (replacing Auth0)
+    const token = localStorage.getItem('google_access_token');
+    
+    if (!token) {
       router.push('/auth/signin');
       return;
     }
-  }, [isAuthenticated, isLoading, router]);
-
-  // Show loading while Auth0 is checking authentication status
-  if (isLoading) {
-    return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-pulse text-foreground">Loading...</div>
-      </div>
-    );
-  }
-
-  // Don't render the page if not authenticated
-  if (!isAuthenticated) {
-    return null;
-  }
+  }, [router]);
 
   const handleDebtToggle = (debtId: string) => {
     setHasNoDebt(false);

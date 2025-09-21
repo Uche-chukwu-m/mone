@@ -2,29 +2,27 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useMonoAuth } from "@/lib/auth0-utils";
 
 export default function Home() {
   const router = useRouter();
-  const { isAuthenticated, isLoading } = useMonoAuth();
 
   useEffect(() => {
-    // Always redirect to appropriate page based on auth status
-    if (!isLoading) {
-      if (isAuthenticated) {
-        // User is authenticated, send them to welcome page
-        router.push('/welcome');
-      } else {
-        // User is not authenticated, send them to sign-in
-        router.push('/auth/signin');
-      }
+    // Check if user is authenticated via localStorage token
+    const token = localStorage.getItem('google_access_token');
+    
+    if (token) {
+      // User is authenticated, send them to welcome/onboarding
+      router.push('/welcome');
+    } else {
+      // User is not authenticated, send them to sign-in
+      router.push('/auth/signin');
     }
-  }, [isAuthenticated, isLoading, router]);
+  }, [router]);
 
   // Show loading while determining where to redirect
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
-      <div className="animate-pulse text-foreground">Loading...</div>
+    <div className="min-h-screen bg-black flex items-center justify-center">
+      <div className="animate-pulse text-white">Loading...</div>
     </div>
   );
 }
