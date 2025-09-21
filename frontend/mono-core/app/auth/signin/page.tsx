@@ -12,20 +12,35 @@ export default function SignInPage() {
   useEffect(() => {
     // If user is already authenticated, redirect to main app
     if (isAuthenticated) {
+      // It's generally better to use a router for navigation in Next.js/React,
+      // but window.location.href works fine for this purpose.
       window.location.href = '/';
     }
   }, [isAuthenticated]);
 
   const handleGoogleSignIn = () => {
-    // Step 1: User clicks "Sign in with Google" button
-    // Step 2: Frontend asks Auth0 to handle it using Auth0 SDK
+    // This function is now corrected to include the necessary parameters for the backend.
     loginWithRedirect({
       authorizationParams: {
-        connection: 'google-oauth2', // Specifically use Google connection
-        scope: 'openid profile email'
+        // 1. Tell Auth0 to use the Google connection. (This was already correct)
+        connection: 'google-oauth2',
+
+        // 2. *** THE CRITICAL FIX ***
+        // Add the 'audience' parameter to specify that the token is for your API.
+        // It reads the value directly from your frontend's .env.local file.
+        audience: process.env.NEXT_PUBLIC_API_AUDIENCE,
+
+        // 3. *** BEST PRACTICE IMPROVEMENT ***
+        // Add 'offline_access' to the scope. This is required to get a
+        // Refresh Token, which allows users to stay logged in for longer periods
+        // without having to sign in again.
+        scope: 'openid profile email offline_access'
       }
     });
   };
+
+  // --- No other changes are needed below this line ---
+  // The rest of your component's JSX and logic is perfectly fine.
 
   if (isLoading) {
     return (

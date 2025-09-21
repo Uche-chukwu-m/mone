@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import time
 from bs4 import BeautifulSoup
 import pandas as pd
+from fastapi.middleware.cors import CORSMiddleware
 
 # --- Google & AI Imports ---
 import google.generativeai as genai
@@ -31,6 +32,19 @@ from database import (
 # --- INITIAL SETUP ---
 load_dotenv()
 app = FastAPI()
+
+# --- CORS CONFIGURATION ---
+# Allow requests from the frontend during local development
+frontend_origin = os.environ.get("FRONTEND_ORIGIN", "http://localhost:3000")
+# Note: your dev server logs show port 3001; set FRONTEND_ORIGIN accordingly in backend .env
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[frontend_origin],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 model = genai.GenerativeModel('gemini-1.5-flash')
 
@@ -216,7 +230,8 @@ async def auth_google_callback(request: Request):
     # Use the REAL database function
     save_google_credentials_to_db(user_id, credentials_info)
     
-    return RedirectResponse(url="/?message=Gmail-Account-Linked-Successfully")
+    # Redirect back to the frontend app with a success message
+    return RedirectResponse(url=f"{frontend_origin}/?message=Gmail-Account-Linked-Successfully")
 
 @app.get("/user/profile")
 def read_user_profile(payload: dict = Depends(verify_token)):
@@ -375,7 +390,7 @@ def sync_emails(payload: dict = Depends(verify_token)):
             OR "shipping confirmation" OR "delivery confirmation" OR "tracking number"
             OR "subscription renewal" OR "subscription receipt" OR "billing notice" OR "charge notice"
             OR "account debit" OR "account credit" OR "payment processed" OR "transaction receipt")
-            newer_than:30d
+            newer_than:60d
             -has:calendar
             -newsletter -unsubscribe -promotional -promotion -marketing -survey -event -webinar
             -invitation -rsvp -social -noreply -auto -AMA
@@ -389,26 +404,35 @@ def sync_emails(payload: dict = Depends(verify_token)):
 
         print(f"Found {len(messages)} relevant emails. Processing up to 10.")
         # 4. Loop through messages, get content, and parse
-        for message in messages[:10]: # Limit to 10 for hackathon speed
-            msg = service.users().messages().get(userId='me', id=message['id'], format='full').execute()
-            
-            # Find the email body and decode it
-            # Use our new robust function to get the email body
-            email_body_text = get_email_body(msg)
-            
-            if email_body_text:
-                # For debugging, let's print the first few hundred characters of the email we're parsing
-                print("--- PARSING EMAIL BODY (first 300 chars) ---")
-                print(email_body_text[:300])
-                print("---------------------------------------------")
+        parsed_transactions = []
+        success_count = 0
+        index = 0
 
-                parsed_data = parse_email_content(email_body_text)
-                if parsed_data:
-                    print(f"✅ SUCCESS: Parsed transaction: {parsed_data.get('vendorName')}")
-                    parsed_transactions.append(parsed_data)
+        while success_count < 10 and index < len(messages):
+            message = messages[index]
+            index += 1  # Always move to the next message
+
+            try:
+                msg = service.users().messages().get(userId='me', id=message['id'], format='full').execute()
+                email_body_text = get_email_body(msg)
+
+                if email_body_text:
+                    print("--- PARSING EMAIL BODY (first 300 chars) ---")
+                    print(email_body_text[:300])
+                    print("---------------------------------------------")
+
+                    parsed_data = parse_email_content(email_body_text)
+                    if parsed_data:
+                        print(f"✅ SUCCESS: Parsed transaction: {parsed_data.get('vendorName')}")
+                        parsed_transactions.append(parsed_data)
+                        success_count += 1
+                    else:
+                        print("❌ FAILED: Gemini returned null for the above email body.")
                 else:
-                    print("❌ FAILED: Gemini returned null for the above email body.")
-                
+                    print("❌ FAILED: Could not extract email body.")
+            except Exception as e:
+                print(f"❌ ERROR: Failed to process message {message['id']}: {e}")
+
                 # 5. Save the results to the REAL database
         save_result = save_transactions_to_db(user_id, parsed_transactions)
         return {"status": "Sync complete", "found_emails": len(messages), "parsed_transactions": len(parsed_transactions), "db_result": save_result}
