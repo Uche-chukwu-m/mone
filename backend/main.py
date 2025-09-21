@@ -1,13 +1,12 @@
 import os
 import json
-import base64 # Needed for decoding email body
-from fastapi import FastAPI, Depends, Request, HTTPException
+import base64
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import RedirectResponse
 from dotenv import load_dotenv
 import time
 from bs4 import BeautifulSoup
 import pandas as pd
-from fastapi.middleware.cors import CORSMiddleware
 
 # --- Google & AI Imports ---
 import google.generativeai as genai
@@ -17,10 +16,7 @@ from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from google.api_core import exceptions
 
-# --- Custom Imports ---
-from auth import verify_token
-
-# Import our REAL database functions
+# Import our database functions
 from database import (
     save_google_credentials_to_db,
     get_google_credentials_from_db,
@@ -32,19 +28,6 @@ from database import (
 # --- INITIAL SETUP ---
 load_dotenv()
 app = FastAPI()
-
-# --- CORS CONFIGURATION ---
-# Allow requests from the frontend during local development
-frontend_origin = os.environ.get("FRONTEND_ORIGIN", "http://localhost:3000")
-# Note: your dev server logs show port 3001; set FRONTEND_ORIGIN accordingly in backend .env
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[frontend_origin],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 genai.configure(api_key=os.environ["GOOGLE_API_KEY"])
 model = genai.GenerativeModel('gemini-1.5-flash')
 
@@ -66,13 +49,11 @@ SCOPES = [
 ]
 
 # --- GEMINI PARSING LOGIC ---
-def parse_email_content(email_content: str) -> dict | None:
+def parse_email_content(email_content: str):
     """
     Takes email text, sends it to Gemini, and returns structured JSON.
     Includes a retry mechanism to handle API rate limiting.
     """
-# Inside the parse_email_content function in main.py
-
     prompt = f"""
 You are a world-class financial data extraction engine named 'FinParser'. 
 Your primary function is to meticulously analyze the following email content and convert it into a structured, detailed JSON object representing a single financial transaction.
@@ -155,11 +136,9 @@ def convert_html_to_text(html_content: str) -> str:
     text = soup.get_text(separator=' ', strip=True)
     return text
 
-# Add this new helper function to your main.py
-# Replace your old get_email_body function with this one
-def get_email_body(msg: dict) -> str | None:
+def get_email_body(msg: dict):
     """
-    A much more robust function to extract the text body from a Gmail message object.
+    A robust function to extract the text body from a Gmail message object.
     It will prioritize the 'text/plain' part, but if it's not available,
     it will fall back to the 'text/html' part and clean it.
     """
@@ -210,61 +189,111 @@ def read_root():
 
 # --- OAUTH2 & AUTH ENDPOINTS ---
 @app.get("/auth/google/login")
-def auth_google_login(payload: dict = Depends(verify_token)):
-    user_id = payload.get("sub")
-    flow = Flow.from_client_config(client_config=client_config, scopes=SCOPES, redirect_uri=os.environ.get("REDIRECT_URI"))
-    authorization_url, state = flow.authorization_url(access_type='offline', prompt='consent', state=user_id)
-    return {"authorization_url": authorization_url}
+def auth_google_login():
+    """
+    Initiate Google OAuth flow. 
+    Generate a state parameter and redirect user to Google OAuth.
+    """
+    import uuid
+    state = str(uuid.uuid4())
+    
+    flow = Flow.from_client_config(
+        client_config=client_config,
+        scopes=SCOPES,
+        redirect_uri=os.environ.get("REDIRECT_URI")
+    )
+    authorization_url, _ = flow.authorization_url(
+        access_type='offline',
+        prompt='consent',
+        state=state
+    )
+    
+    # Redirect directly to Google OAuth
+    return RedirectResponse(url=authorization_url)
 
 @app.get("/auth/google/callback")
 async def auth_google_callback(request: Request):
-    user_id = request.query_params.get('state')
     code = request.query_params.get('code')
-    if not user_id: return {"error": "Invalid state. User ID was not found."}
-
-    flow = Flow.from_client_config(client_config=client_config, scopes=SCOPES, redirect_uri=os.environ.get("REDIRECT_URI"))
-    flow.fetch_token(code=code)
-    credentials = flow.credentials
-    credentials_info = {'token': credentials.token, 'refresh_token': credentials.refresh_token, 'token_uri': credentials.token_uri, 'client_id': credentials.client_id, 'client_secret': credentials.client_secret, 'scopes': credentials.scopes}
+    state = request.query_params.get('state')
     
-    # Use the REAL database function
-    save_google_credentials_to_db(user_id, credentials_info)
+    if not code:
+        return RedirectResponse(url="http://localhost:3000/auth/signin?error=no_code")
     
-    # Redirect back to the frontend app with a success message
-    return RedirectResponse(url=f"{frontend_origin}/?message=Gmail-Account-Linked-Successfully")
+    try:
+        # Exchange code for credentials
+        flow = Flow.from_client_config(
+            client_config=client_config, 
+            scopes=SCOPES, 
+            redirect_uri=os.environ.get("REDIRECT_URI")
+        )
+        flow.fetch_token(code=code)
+        credentials = flow.credentials
+        
+        # Get user info from Google
+        user_service = build('oauth2', 'v2', credentials=credentials)
+        user_info = user_service.userinfo().get().execute()
+        
+        user_id = user_info.get('id')
+        user_email = user_info.get('email')
+        user_name = user_info.get('name')
+        
+        # Save credentials to database
+        credentials_info = {
+            'token': credentials.token,
+            'refresh_token': credentials.refresh_token,
+            'token_uri': credentials.token_uri,
+            'client_id': credentials.client_id,
+            'client_secret': credentials.client_secret,
+            'scopes': credentials.scopes,
+            'user_info': {
+                'id': user_id,
+                'email': user_email,
+                'name': user_name
+            }
+        }
+        
+        save_google_credentials_to_db(user_id, credentials_info)
+        
+        # Redirect to frontend with success and token
+        redirect_url = f"http://localhost:3000/auth/callback?token={credentials.token}&user_id={user_id}&email={user_email}&name={user_name}"
+        return RedirectResponse(url=redirect_url)
+        
+    except Exception as e:
+        print(f"OAuth callback error: {e}")
+        return RedirectResponse(url="http://localhost:3000/auth/signin?error=oauth_failed")
 
 @app.get("/user/profile")
-def read_user_profile(payload: dict = Depends(verify_token)):
-    user_id = payload.get("sub")
+def read_user_profile(user_id: str):
+    """
+    Get user profile. For now, we'll use query parameter.
+    In production, you'd want proper JWT validation.
+    """
     return {"message": "This is a protected endpoint.", "user_id": user_id}
 
-# --- DATA RETRIEVAL & INSIGHTS ENDPOINTS (NEW SECTION) ---
+# --- DATA RETRIEVAL & INSIGHTS ENDPOINTS ---
 @app.get("/transactions")
-def get_user_transactions(payload: dict = Depends(verify_token)):
+def get_user_transactions(user_id: str):
     """
-    Protected endpoint to fetch all transactions for the logged-in user.
+    Fetch all transactions for the specified user.
     """
-    user_id = payload.get("sub")
     transactions = get_transactions_for_user(user_id)
     return {"transactions": transactions}
 
 @app.get("/summary")
-def get_user_summary(payload: dict = Depends(verify_token)):
+def get_user_summary(user_id: str):
     """
-    Protected endpoint to fetch a spending summary for the logged-in user.
+    Fetch a spending summary for the specified user.
     """
-    user_id = payload.get("sub")
     summary = get_spending_summary(user_id)
     return summary
 
 @app.post("/insights")
-def get_ai_insights(payload: dict = Depends(verify_token)):
+def get_ai_insights(user_id: str):
     """
     THE "WOW" ENDPOINT.
     Fetches the user's transactions, formats them, and asks Gemini
     for personalized, actionable financial advice.
     """
-    user_id = payload.get("sub")
     transactions = get_transactions_for_user(user_id)
 
     if len(transactions) < 3:
@@ -313,7 +342,7 @@ Analyze the provided data and generate THREE distinct insights. Each insight mus
 2.  **"Hidden Recurring Costs":** Find a purchase that looks like a one-off but might be an unmanaged subscription or a frequently repeated small purchase that adds up. (e.g., "That $7.99 'Pro App' purchase from last week is a monthly subscription. Is it providing continuous value?")
 3.  **"Smart Substitution":** Compare a specific line-item from one vendor to a similar, cheaper alternative you know about from general knowledge or see in their other purchases. (e.g., "I see you bought the 'Brand X' coffee pods from Amazon. You also shop at Costco, where their 'Kirkland Signature' pods, which are highly rated, are 30% cheaper per pod.")
 4.  **"Timing is Everything":** Notice a pattern in the timing of purchases that could be optimized. (e.g., "You have three separate 'Urban Outfitters' orders this month. By consolidating your purchases into a single order, you could have met the $75 free shipping threshold and saved nearly $18.")
-5.  **"Positive Reinforcement":** Find a genuinely positive spending habit and praise it, explaining why it's a smart financial move. (e.g., "Your consistent monthly payment to your Chase Freedom card is excellent! Paying your credit card on time is a fantastic way to build a strong credit score.")
+5.  **"Positive Reinforcement":** Find a genuinely positive spending habit and praise it, explaining why it's a smart financial move. (e.g., "Your consistent monthly payment to your Chase Freedom card is excellent! Paying your credit card on time is one of the best ways to build a strong credit score.")
 6.  **"Redundancy Check":** Identify purchases of similar items or services that might be redundant. (e.g., "You have active subscriptions to both Netflix and Hulu. While they have different content, it's worth checking if you're getting full value from both, as their purposes overlap significantly.")
 
 **OUTPUT FORMAT:**
@@ -356,20 +385,16 @@ You MUST return a single, valid JSON object. The root key must be "insights". Th
         print(f"Error getting insights from Gemini: {e}")
         raise HTTPException(status_code=500, detail="Could not generate AI insights at this time.")
 
-# --- CORE FUNCTIONALITY ENDPOINT ---
-
-
 @app.post("/email/sync")
-def sync_emails(payload: dict = Depends(verify_token)):
+def sync_emails(user_id: str):
     """
     FULLY OPERATIONAL ENDPOINT.
     Connects to Gmail using stored credentials, fetches emails, parses them with AI,
     and saves the structured data to MongoDB.
     """
-    user_id = payload.get("sub")
     print(f"Starting email sync for user: {user_id}")
 
-    # 1. Get user's Google credentials from the REAL database
+    # 1. Get user's Google credentials from the database
     creds_info = get_google_credentials_from_db(user_id)
     if not creds_info or "token" not in creds_info:
         raise HTTPException(status_code=400, detail="User has not linked their Google account. Please link it first.")
@@ -390,7 +415,7 @@ def sync_emails(payload: dict = Depends(verify_token)):
             OR "shipping confirmation" OR "delivery confirmation" OR "tracking number"
             OR "subscription renewal" OR "subscription receipt" OR "billing notice" OR "charge notice"
             OR "account debit" OR "account credit" OR "payment processed" OR "transaction receipt")
-            newer_than:60d
+            newer_than:30d
             -has:calendar
             -newsletter -unsubscribe -promotional -promotion -marketing -survey -event -webinar
             -invitation -rsvp -social -noreply -auto -AMA
@@ -404,36 +429,26 @@ def sync_emails(payload: dict = Depends(verify_token)):
 
         print(f"Found {len(messages)} relevant emails. Processing up to 10.")
         # 4. Loop through messages, get content, and parse
-        parsed_transactions = []
-        success_count = 0
-        index = 0
+        for message in messages[:10]: # Limit to 10 for speed
+            msg = service.users().messages().get(userId='me', id=message['id'], format='full').execute()
+            
+            # Find the email body and decode it
+            email_body_text = get_email_body(msg)
+            
+            if email_body_text:
+                # For debugging, let's print the first few hundred characters of the email we're parsing
+                print("--- PARSING EMAIL BODY (first 300 chars) ---")
+                print(email_body_text[:300])
+                print("---------------------------------------------")
 
-        while success_count < 10 and index < len(messages):
-            message = messages[index]
-            index += 1  # Always move to the next message
-
-            try:
-                msg = service.users().messages().get(userId='me', id=message['id'], format='full').execute()
-                email_body_text = get_email_body(msg)
-
-                if email_body_text:
-                    print("--- PARSING EMAIL BODY (first 300 chars) ---")
-                    print(email_body_text[:300])
-                    print("---------------------------------------------")
-
-                    parsed_data = parse_email_content(email_body_text)
-                    if parsed_data:
-                        print(f"✅ SUCCESS: Parsed transaction: {parsed_data.get('vendorName')}")
-                        parsed_transactions.append(parsed_data)
-                        success_count += 1
-                    else:
-                        print("❌ FAILED: Gemini returned null for the above email body.")
+                parsed_data = parse_email_content(email_body_text)
+                if parsed_data:
+                    print(f"✅ SUCCESS: Parsed transaction: {parsed_data.get('vendorName')}")
+                    parsed_transactions.append(parsed_data)
                 else:
-                    print("❌ FAILED: Could not extract email body.")
-            except Exception as e:
-                print(f"❌ ERROR: Failed to process message {message['id']}: {e}")
-
-                # 5. Save the results to the REAL database
+                    print("❌ FAILED: Gemini returned null for the above email body.")
+                    
+        # 5. Save the results to the database
         save_result = save_transactions_to_db(user_id, parsed_transactions)
         return {"status": "Sync complete", "found_emails": len(messages), "parsed_transactions": len(parsed_transactions), "db_result": save_result}
 

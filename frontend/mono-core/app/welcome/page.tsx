@@ -6,76 +6,22 @@ import { motion } from 'framer-motion';
 import { MonoLogo } from "@/components/mono-logo";
 import { ProgressBar } from "@/components/progress-bar";
 import { AnimatedVisual } from "@/components/animated-visual";
-import { useMonoAuth } from "@/lib/auth0-utils";
-import { useApiClient } from '@/lib/api-client';
 
 export default function WelcomePage() {
   const router = useRouter();
-  const { user, isAuthenticated, isLoading } = useMonoAuth();
-  const apiClient = useApiClient();
-  const [transactions, setTransactions] = useState([]);
-  const [summary, setSummary] = useState(null);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [error, setError] = useState('');
-
-  const fetchData = async () => {
-    if (!apiClient) return;
-    try {
-      const [transactionsData, summaryData] = await Promise.all([
-        apiClient.getTransactions(),
-        apiClient.getSummary(),
-      ]);
-      setTransactions(transactionsData.transactions);
-      setSummary(summaryData);
-    } catch (err) {
-      setError('Failed to fetch data. Please try again.');
-      console.error(err);
-    }
-  };
 
   useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
+    // Check if user is authenticated via localStorage (replacing Auth0)
+    const token = localStorage.getItem('google_access_token');
+    
+    if (!token) {
       router.push('/auth/signin');
     }
 
     if (isAuthenticated && apiClient) {
       fetchData();
     }
-  }, [isAuthenticated, isLoading, router, apiClient]);
-
-  const handleLinkGoogle = async () => {
-    if (!apiClient) return;
-    try {
-      const { authorization_url } = await apiClient.getGoogleLoginUrl();
-      window.location.href = authorization_url;
-    } catch (err) {
-      setError('Could not start the Google linking process.');
-      console.error(err);
-    }
-  };
-
-  const handleSyncEmails = async () => {
-    if (!apiClient) return;
-    setIsSyncing(true);
-    setError('');
-    try {
-      await apiClient.syncEmails();
-      await fetchData(); // Refresh data after sync
-    } catch (err) {
-      setError('Failed to sync emails.');
-      console.error(err);
-    } finally {
-      setIsSyncing(false);
-    }
-  };
-
-  if (isLoading) {
-    return <div className="min-h-screen bg-background flex items-center justify-center">Loading...</div>;
-  }
-
-  if (!isAuthenticated) {
-    return null;
-  }
+  }, [router]);
 
   return (
     <motion.div className="min-h-screen bg-background flex" initial={{ opacity: 0 }} animate={{ opacity: 1 }}>

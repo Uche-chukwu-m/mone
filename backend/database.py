@@ -1,114 +1,181 @@
-import os
 from pymongo import MongoClient
-from pymongo.errors import ConnectionFailure
+import os
 from dotenv import load_dotenv
-import pandas as pd
+from datetime import datetime
+import certifi
 
+# Load environment variables
 load_dotenv()
 
+# MongoDB connection
 MONGO_URI = os.environ.get("MONGO_URI")
+client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
+db = client['mono_db']
 
-try:
-    # Initialize the client. The client is thread-safe and can be shared.
-    client = MongoClient(MONGO_URI)
-    # Ping the server to check the connection
-    client.admin.command('ping')
-    print("✅ MongoDB connection successful.")
-except (ConnectionFailure, AttributeError) as e:
-    print(f"❌ Could not connect to MongoDB: {e}")
-    # Exit or handle the error appropriately if the database is critical
-    client = None
-
-# Get a handle to the specific database
-db = client.hackrice_db
-
-# Get handles to the collections we will be using
-# A 'user' can have many 'transactions'.
-# We'll use the Auth0 user_id as the primary key (_id) for the users collection.
-users_collection = db.users
-transactions_collection = db.transactions
-
-# --- REAL DATABASE FUNCTIONS ---
+# Collections
+credentials_collection = db['google_credentials']
+transactions_collection = db['transactions']
 
 def save_google_credentials_to_db(user_id: str, credentials_info: dict):
     """
-    Saves or updates a user's Google credentials in the 'users' collection.
-    We use upsert=True to create the user document if it doesn't exist.
+    Save Google OAuth credentials to MongoDB.
     """
-    users_collection.update_one(
-        {"_id": user_id},
-        {"$set": {"google_credentials": credentials_info}},
-        upsert=True
-    )
-    print(f"--- REAL DB: Saved Google credentials for user: {user_id} ---")
-    return {"status": "success"}
+    try:
+        # Upsert user credentials (create or update)
+        result = credentials_collection.update_one(
+            {"user_id": user_id},
+            {
+                "$set": {
+                    "user_id": user_id,
+                    "credentials": credentials_info,
+                    "created_at": datetime.utcnow(),
+                    "updated_at": datetime.utcnow()
+                }
+            },
+            upsert=True
+        )
+        print(f"--- REAL DB: Saved Google credentials for user: {user_id} ---")
+        return {"success": True, "user_id": user_id}
+    except Exception as e:
+        print(f"Error saving credentials: {e}")
+        return {"success": False, "error": str(e)}
 
-def get_google_credentials_from_db(user_id: str) -> dict | None:
+def get_google_credentials_from_db(user_id: str):
     """
-    Fetches a user's Google credentials from the 'users' collection.
+    Retrieve Google OAuth credentials from MongoDB.
     """
-    user_document = users_collection.find_one({"_id": user_id})
-    print(f"--- REAL DB: Fetched credentials for user: {user_id} ---")
-    if user_document and "google_credentials" in user_document:
-        return user_document["google_credentials"]
-    return None
+    try:
+        user_doc = credentials_collection.find_one({"user_id": user_id})
+        if user_doc and "credentials" in user_doc:
+            print(f"--- REAL DB: Retrieved credentials for user: {user_id} ---")
+            return user_doc["credentials"]
+        else:
+            print(f"--- REAL DB: No credentials found for user: {user_id} ---")
+            return None
+    except Exception as e:
+        print(f"Error retrieving credentials: {e}")
+        return None
 
 def save_transactions_to_db(user_id: str, transactions: list):
     """
-    Saves a list of parsed transactions to the 'transactions' collection.
-    Each transaction is linked to the user via the user_id field.
+    Save parsed transactions to MongoDB.
     """
-    if not transactions:
-        return {"status": "no transactions to save", "saved_count": 0}
-
-    # Add the user_id to each transaction document
-    for tx in transactions:
-        tx['user_id'] = user_id
-    
-    result = transactions_collection.insert_many(transactions)
-    print(f"--- REAL DB: Saved {len(result.inserted_ids)} transactions for user: {user_id} ---")
-    return {"status": "success", "saved_count": len(result.inserted_ids)}
-
-def get_transactions_for_user(user_id: str) -> list:
-    """
-    Fetches all transaction documents for a specific user from MongoDB.
-    """
-    # The find() method returns a cursor, so we convert it to a list.
-    # We exclude the '_id' field from the output for cleaner JSON.
-    transactions = list(transactions_collection.find({"user_id": user_id}, {'_id': 0}))
-    print(f"--- REAL DB: Fetched {len(transactions)} transactions for user: {user_id} ---")
-    return transactions
-
-def get_spending_summary(user_id: str) -> dict:
-    """
-    Calculates a spending summary for a user using MongoDB's aggregation pipeline.
-    """
-    pipeline = [
-        {
-            "$match": {"user_id": user_id} # Filter for the current user
-        },
-        {
-            "$group": {
-                "_id": "$category", # Group transactions by their category
-                "total_spent": {"$sum": "$totalAmount"}, # Sum the amounts in each group
-                "count": {"$sum": 1} # Count the number of transactions in each group
-            }
-        },
-        {
-            "$sort": {"total_spent": -1} # Sort by the highest spending categories first
+    try:
+        if not transactions:
+            return {"success": True, "message": "No transactions to save", "count": 0}
+        
+        # Add metadata to each transaction
+        for transaction in transactions:
+            transaction.update({
+                "user_id": user_id,
+                "created_at": datetime.utcnow(),
+                "source": "email_sync"
+            })
+        
+        # Insert transactions
+        result = transactions_collection.insert_many(transactions)
+        print(f"--- REAL DB: Saved {len(transactions)} transactions for user: {user_id} ---")
+        
+        return {
+            "success": True,
+            "count": len(transactions),
+            "inserted_ids": [str(id) for id in result.inserted_ids]
         }
-    ]
-    
-    summary_cursor = transactions_collection.aggregate(pipeline)
-    summary_list = list(summary_cursor)
-    
-    # Calculate overall total
-    total_spending = sum(item['total_spent'] for item in summary_list)
+    except Exception as e:
+        print(f"Error saving transactions: {e}")
+        return {"success": False, "error": str(e)}
 
-    print(f"--- REAL DB: Calculated spending summary for user: {user_id} ---")
-    
-    return {
-        "total_spending": round(total_spending, 2),
-        "category_breakdown": summary_list
-    }
+def get_transactions_for_user(user_id: str):
+    """
+    Retrieve all transactions for a user from MongoDB.
+    """
+    try:
+        transactions = list(transactions_collection.find(
+            {"user_id": user_id},
+            {"_id": 0}  # Exclude the MongoDB _id field
+        ).sort("created_at", -1))  # Sort by newest first
+        
+        print(f"--- REAL DB: Retrieved {len(transactions)} transactions for user: {user_id} ---")
+        return transactions
+    except Exception as e:
+        print(f"Error retrieving transactions: {e}")
+        return []
 
+def get_spending_summary(user_id: str):
+    """
+    Generate a spending summary for a user.
+    """
+    try:
+        # Get all transactions for the user
+        transactions = get_transactions_for_user(user_id)
+        
+        if not transactions:
+            return {
+                "total_transactions": 0,
+                "total_spent": 0,
+                "categories": {},
+                "vendors": {},
+                "monthly_totals": {}
+            }
+        
+        # Calculate summary statistics
+        total_spent = sum(t.get('totalAmount', 0) for t in transactions)
+        total_transactions = len(transactions)
+        
+        # Group by vendor
+        vendors = {}
+        for t in transactions:
+            vendor = t.get('vendorName', 'Unknown')
+            if vendor not in vendors:
+                vendors[vendor] = {"count": 0, "total": 0}
+            vendors[vendor]["count"] += 1
+            vendors[vendor]["total"] += t.get('totalAmount', 0)
+        
+        # Sort vendors by total spending
+        top_vendors = dict(sorted(vendors.items(), key=lambda x: x[1]["total"], reverse=True)[:10])
+        
+        # Group by transaction type (as categories)
+        categories = {}
+        for t in transactions:
+            category = t.get('transactionType', 'Other')
+            if category not in categories:
+                categories[category] = {"count": 0, "total": 0}
+            categories[category]["count"] += 1
+            categories[category]["total"] += t.get('totalAmount', 0)
+        
+        return {
+            "total_transactions": total_transactions,
+            "total_spent": round(total_spent, 2),
+            "categories": categories,
+            "top_vendors": top_vendors,
+            "average_transaction": round(total_spent / total_transactions, 2) if total_transactions > 0 else 0
+        }
+    except Exception as e:
+        print(f"Error generating spending summary: {e}")
+        return {
+            "total_transactions": 0,
+            "total_spent": 0,
+            "categories": {},
+            "vendors": {},
+            "error": str(e)
+        }
+
+# Test MongoDB connection
+def test_connection():
+    """
+    Test MongoDB connection.
+    """
+    try:
+        # Test the connection
+        client.admin.command('ping')
+        print("✅ MongoDB connection successful.")
+        return True
+    except Exception as e:
+        print(f"❌ MongoDB connection failed: {e}")
+        return False
+
+# Test connection when module is imported
+if __name__ == "__main__":
+    test_connection()
+else:
+    test_connection()

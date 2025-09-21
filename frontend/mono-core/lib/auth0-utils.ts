@@ -23,25 +23,25 @@ export function useMonoAuth() {
     });
   };
 
-  // Sign out and redirect to the home page
+  // Sign out and redirect to sign-in page
   const signOut = () => {
     logout({
       logoutParams: {
-        returnTo: process.env.NEXT_PUBLIC_AUTH0_LOGOUT_REDIRECT_URI
+        returnTo: window.location.origin + '/auth/signin'
       }
     });
   };
 
-  // Get access token (JWT) for API calls
+  // Get user information
+  const getUser = () => {
+    return user || null;
+  };
+
+  // Get access token (JWT)
   const getAccessToken = async () => {
     try {
       if (!isAuthenticated) return null;
-      // Request the token with the specific audience for your backend API
-      return await getAccessTokenSilently({
-        authorizationParams: {
-          audience: process.env.NEXT_PUBLIC_API_AUDIENCE,
-        }
-      });
+      return await getAccessTokenSilently();
     } catch (error) {
       console.error('Error getting access token:', error);
       return null;

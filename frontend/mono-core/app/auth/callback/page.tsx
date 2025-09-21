@@ -1,70 +1,64 @@
 'use client';
 
-import { useAuth0 } from '@auth0/auth0-react';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { MonoLogo } from "@/components/mono-logo";
 import { AnimatedVisual } from "@/components/animated-visual";
 
 export default function AuthCallbackPage() {
-  const { isAuthenticated, isLoading, error, user, getAccessTokenSilently } = useAuth0();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
-  const [message, setMessage] = useState('Completing sign-in...');
+  const [message, setMessage] = useState('Processing authentication...');
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     const handleAuthCallback = async () => {
-      if (isLoading) {
-        setStatus('loading');
-        setMessage('Processing authentication...');
-        return;
-      }
+      try {
+        // Extract token and user info from URL parameters (from our backend)
+        const token = searchParams.get('token');
+        const userId = searchParams.get('user_id');
+        const email = searchParams.get('email');
+        const name = searchParams.get('name');
 
-      if (error) {
-        console.error('Auth0 error:', error);
+        if (!token || !userId || !email || !name) {
+          throw new Error('Missing authentication data');
+        }
+
+        setMessage('Setting up your account...');
+
+        // Store authentication data in localStorage
+        localStorage.setItem('google_access_token', token);
+        localStorage.setItem('user_id', userId);
+        localStorage.setItem('email', email);
+        localStorage.setItem('name', decodeURIComponent(name));
+
+        console.log('✅ Google OAuth successful:', {
+          userId,
+          email,
+          name: decodeURIComponent(name)
+        });
+
+        setStatus('success');
+        setMessage('Welcome! Redirecting to your dashboard...');
+
+        // Quick redirect to welcome page
+        setTimeout(() => {
+          router.push('/welcome');
+        }, 500); // Much faster redirect
+
+      } catch (error) {
+        console.error('❌ Authentication callback error:', error);
         setStatus('error');
         setMessage('Authentication failed. Please try again.');
         setTimeout(() => {
           router.push('/auth/signin');
         }, 3000);
-        return;
-      }
-
-      if (isAuthenticated && user) {
-        try {
-          setStatus('loading');
-          setMessage('Setting up your account...');
-
-          // Step 6: Auth0 creates a user profile and issues your app's JWT
-          // Get the access token (JWT) from Auth0
-          const accessToken = await getAccessTokenSilently();
-          
-          // Store user info and token (Auth0 handles most of this automatically)
-          console.log('User authenticated:', user);
-          console.log('Access token received:', !!accessToken);
-
-          setStatus('success');
-          setMessage('Welcome! Redirecting to your dashboard...');
-
-          // Redirect to onboarding or main app
-          setTimeout(() => {
-            router.push('/');
-          }, 2000);
-
-        } catch (tokenError) {
-          console.error('Token retrieval error:', tokenError);
-          setStatus('error');
-          setMessage('Failed to complete authentication setup.');
-          setTimeout(() => {
-            router.push('/auth/signin');
-          }, 3000);
-        }
       }
     };
 
     handleAuthCallback();
-  }, [isAuthenticated, isLoading, error, user, getAccessTokenSilently, router]);
+  }, [router, searchParams]);
 
   const getStatusIcon = () => {
     switch (status) {
